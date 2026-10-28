@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Beach Quest 3D: The Lost Treasure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Inter', sans-serif; touch-action: none; }
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .pointer-events-auto { pointer-events: auto; }
+        
+        /* Mobile Controls */
+        #mobile-controls { display: none; }
+        @media (max-width: 768px) {
+            #mobile-controls { display: flex; }
+        }
+        .btn-control { background: rgba(255,255,255,0.7); border: 2px solid white; border-radius: 50%; width: 60px; height: 60px; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 24px; user-select: none; }
+        .btn-control:active { background: rgba(200,200,200,0.9); }
+        
+        /* Animations */
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .animate-bounce-custom { animation: bounce 2s infinite; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- UI Layer -->
+    <div id="ui-layer" class="flex flex-col justify-between p-4">
+        
+        <!-- Top HUD -->
+        <div class="flex justify-between items-start">
+            <div id="mission-hud" class="bg-white/90 p-4 rounded-xl shadow-lg border-4 border-blue-400 max-w-sm hidden pointer-events-auto transition-all">
+                <h2 id="mission-title" class="text-xl font-bold text-blue-800 mb-1">Mission 1</h2>
+                <p id="mission-objective" class="text-gray-700 font-medium">Find 3 beach objects!</p>
+                <div class="mt-2 w-full bg-gray-200 rounded-full h-4">
+                    <div id="mission-progress-bar" class="bg-yellow-400 h-4 rounded-full" style="width: 0%"></div>
+                </div>
+                <p id="mission-counter" class="text-right text-sm font-bold text-gray-600 mt-1">0/3</p>
+            </div>
+            
+            <div class="flex gap-2 pointer-events-auto">
+                <button id="btn-sound" class="bg-white/80 p-3 rounded-full shadow hover:bg-white transition-colors" onclick="toggleSound()">
+                    🔊
+                </button>
+            </div>
+        </div>
+
+        <!-- Interaction Prompt -->
+        <div id="interaction-prompt" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-20 bg-yellow-400 text-yellow-900 px-6 py-3 rounded-full font-bold shadow-xl border-4 border-white hidden animate-bounce-custom pointer-events-auto cursor-pointer" onclick="handleInteraction()">
+            Press 'E' or Tap to Interact
+        </div>
+
+        <!-- Dialog Box -->
+        <div id="dialog-box" class="absolute bottom-24 left-1/2 transform -translate-x-1/2 w-[90%] max-w-2xl bg-white p-6 rounded-2xl shadow-2xl border-4 border-blue-500 hidden pointer-events-auto fade-in">
+            <div class="flex gap-4 items-center">
+                <div id="dialog-icon" class="text-6xl">🦀</div>
+                <div class="flex-1">
+                    <h3 id="dialog-name" class="font-bold text-xl text-blue-600 mb-2">Captain Claws</h3>
+                    <p id="dialog-text" class="text-lg text-gray-800">Hello, Explorer! Our beach treasure is locked. Complete three English missions to find the keys!</p>
+                    <div id="dialog-vocab" class="hidden mt-4 p-4 bg-yellow-100 rounded-xl border border-yellow-300">
+                        <p id="vocab-word" class="font-bold text-2xl text-yellow-800 uppercase"></p>
+                        <p id="vocab-sentence" class="text-lg italic mt-1 text-gray-700"></p>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-dialog-next" class="mt-4 w-full bg-blue-500 text-white font-bold py-3 rounded-xl hover:bg-blue-600 transition-colors" onclick="closeDialog()">Continue</button>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-screen" class="absolute inset-0 bg-black/80 flex items-center justify-center hidden pointer-events-auto z-50 fade-in p-4">
+            <div class="bg-white p-8 rounded-3xl max-w-lg w-full shadow-2xl border-8 border-yellow-400">
+                <div class="text-center mb-6">
+                    <span class="text-4xl">👑</span>
+                    <h2 class="text-3xl font-bold text-yellow-600 mt-2">Unlock the Treasure!</h2>
+                    <p class="text-gray-600">Answer 5 questions to open the chest.</p>
+                </div>
+                
+                <div id="quiz-content">
+                    <p id="quiz-progress" class="text-sm font-bold text-blue-500 mb-2">Question 1 of 5</p>
+                    <h3 id="quiz-question" class="text-xl font-bold text-gray-800 mb-6">What is this?</h3>
+                    <div id="quiz-options" class="flex flex-col gap-3">
+                        <!-- Options generated by JS -->
+                    </div>
+                    <p id="quiz-feedback" class="mt-4 font-bold text-center hidden"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="absolute inset-0 bg-blue-400/90 flex items-center justify-center pointer-events-auto z-50 p-4">
+            <div class="bg-white p-10 rounded-3xl max-w-md w-full text-center shadow-2xl">
+                <h1 class="text-4xl font-bold text-blue-600 mb-2">Beach Quest 3D</h1>
+                <p class="text-lg text-gray-600 mb-6 font-medium">The Lost Treasure</p>
+                
+                <div class="bg-blue-50 p-4 rounded-xl mb-8 text-left text-sm text-gray-700">
+                    <p class="font-bold mb-2">How to play:</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>PC:</b> Use W,A,S,D or Arrows to move. Press 'E' to interact.</li>
+                        <li><b>Mobile:</b> Use the on-screen joystick and buttons.</li>
+                        <li>Explore the beach and complete 3 English missions!</li>
+                    </ul>
+                </div>
+                
+                <button class="bg-yellow-400 text-yellow-900 font-bold text-2xl py-4 px-12 rounded-full hover:bg-yellow-300 transform hover:scale-105 transition-all shadow-lg" onclick="startGame()">
+                    PLAY NOW
+                </button>
+            </div>
+        </div>
+
+        <!-- End Screen -->
+        <div id="end-screen" class="absolute inset-0 bg-yellow-300/90 flex items-center justify-center pointer-events-auto z-50 hidden p-4">
+            <div class="bg-white p-10 rounded-3xl max-w-md w-full text-center shadow-2xl border-8 border-yellow-500">
+                <h1 class="text-4xl font-bold text-yellow-600 mb-2">CONGRATULATIONS!</h1>
+                <p class="text-xl text-gray-700 mb-6">You are a Beach Explorer!</p>
+                <div class="text-6xl mb-6 animate-bounce-custom">💎🪙👑</div>
+                <p class="text-gray-600 mb-8">You completed all missions and practised your English!</p>
+                <button class="bg-blue-500 text-white font-bold text-xl py-3 px-8 rounded-full hover:bg-blue-600 transition-all shadow-lg" onclick="location.reload()">
+                    Play Again
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Controls Bottom -->
+        <div id="mobile-controls" class="absolute bottom-4 left-4 right-4 justify-between pointer-events-auto z-20">
+            <!-- D-Pad Style -->
+            <div class="relative w-32 h-32">
+                <button class="btn-control absolute top-0 left-1/2 transform -translate-x-1/2" id="btn-up">W</button>
+                <button class="btn-control absolute bottom-0 left-1/2 transform -translate-x-1/2" id="btn-down">S</button>
+                <button class="btn-control absolute left-0 top-1/2 transform -translate-y-1/2" id="btn-left">A</button>
+                <button class="btn-control absolute right-0 top-1/2 transform -translate-y-1/2" id="btn-right">D</button>
+            </div>
+            
+            <div class="flex items-end">
+                <button class="btn-control bg-yellow-400 text-yellow-900 border-yellow-600 w-20 h-20 text-xl" id="btn-interact" onclick="handleInteraction()">E</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- GAME STATE ---
+        const GameState = {
+            state: 'START', // START, M1, M2, M3, QUIZ, END
+            missionProgress: 0,
+            missionTarget: 3,
+            keys: 0,
+            soundEnabled: true,
+            hasBin: false, // tracks if player picked up rubbish
+            m2Targets: ['redbucket', 'bluespade']
+        };
+
+        const Dictionary = {
+            shell: { name: 'Shell', sentence: 'I can see a beautiful shell.' },
+            starfish: { name: 'Starfish', sentence: 'The starfish is in the sand.' },
+            bucket: { name: 'Bucket', sentence: 'I have a red bucket.' },
+            spade: { name: 'Spade', sentence: 'I use a spade to dig.' },
+            sandcastle: { name: 'Sandcastle', sentence: 'We build a tall sandcastle.' },
+            crab: { name: 'Crab', sentence: 'The crab has sharp claws.' },
+            rubbish: { name: 'Plastic Bottle', sentence: 'Let us clean up the bottle.' },
+            rubbish_can: { name: 'Tin Can', sentence: 'Put the empty can in the bin.' },
+            rubbish_paper: { name: 'Paper', sentence: 'Do not leave paper on the beach.' },
+            bin: { name: 'Bin', sentence: 'Put rubbish in the bin.' },
+            surfboard: { name: 'Surfboard', sentence: 'I surf on the big waves.' },
+            beachball: { name: 'Beach Ball', sentence: 'We play with the beach ball.' },
+            signpost: { name: 'Signpost', sentence: 'The sign says Welcome.' },
+            redbucket: { name: 'Red Bucket', sentence: 'This bucket is red.' },
+            bluespade: { name: 'Blue Spade', sentence: 'This spade is blue.' }
+        };
+
+        const QuizQuestions = [
+            { q: "What do you use to dig in the sand?", options: ["Spade", "Shell", "Crab"], answer: 0 },
+            { q: "Which animal has claws and walks sideways?", options: ["Starfish", "Crab", "Seagull"], answer: 1 },
+            { q: "What can you build using wet sand?", options: ["Tree", "Bucket", "Sandcastle"], answer: 2 },
+            { q: "Complete the sentence: 'I found a beautiful ____ on the beach.'", options: ["Shell", "Bin", "Water"], answer: 0 },
+            { q: "Where should we put our empty plastic bottles?", options: ["In the ocean", "In the sand", "In the bin"], answer: 2 }
+        ];
+
+        let currentQuizIndex = 0;
+
+        // --- THREE.JS SETUP ---
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x4FA3D1); // Better Sky blue
+        scene.fog = new THREE.Fog(0x4FA3D1, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // --- ENHANCED LIGHTING ---
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.6);
+        hemiLight.color.setHSL(0.6, 1, 0.6);
+        hemiLight.groundColor.setHSL(0.095, 1, 0.75);
+        hemiLight.position.set(0, 50, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.color.setHSL(0.1, 1, 0.95);
+        dirLight.position.set(40, 50, 30);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        const d = 80;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        scene.add(dirLight);
+
+        // --- TERRAIN FUNCTION ---
+        function getTerrainHeight(x, z) {
+            const dist = Math.sqrt(x*x + z*z);
+            if (dist >= 70) return -1.5; // Underwater
+            // Dome shape
+            let y = Math.cos((dist / 70) * (Math.PI / 2)) * 8;
+            // Add natural noise (hills/bumps)
+            y += Math.sin(x * 0.2) * Math.cos(z * 0.2) * 1.5;
+            return y;
+        }
+
+        // --- WORLD GENERATION ---
+        const interactableObjects = [];
+        let player, chest, npc, bin;
+
+        function createWorld() {
+            // Ocean (Expanded)
+            const waterGeo = new THREE.PlaneGeometry(400, 400, 64, 64);
+            const waterMat = new THREE.MeshPhongMaterial({ color: 0x006994, transparent: true, opacity: 0.85, flatShading: true, shininess: 80 });
+            const water = new THREE.Mesh(waterGeo, waterMat);
+            water.rotation.x = -Math.PI / 2;
+            water.position.y = 0.5; // Water level
+            water.receiveShadow = true;
+            scene.add(water);
+
+            // Island Terrain
+            const islandGeo = new THREE.PlaneGeometry(160, 160, 64, 64);
+            islandGeo.rotateX(-Math.PI / 2);
+            
+            const pos = islandGeo.attributes.position;
+            const colors = [];
+            const color = new THREE.Color();
+            
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const z = pos.getZ(i);
+                const y = getTerrainHeight(x, z);
+                pos.setY(i, y);
+
+                // Blend colors based on height
+                if (y < 1.5) {
+                    color.setHex(0xE3C58B); // Wet Sand
+                } else if (y < 3) {
+                    color.setHex(0xDEBA78); // Dry Sand
+                } else if (y < 4.5) {
+                    color.setHex(0xA6C759); // Sand-grass transition
+                } else {
+                    color.setHex(0x7CBA3D); // Grass
+                }
+                colors.push(color.r, color.g, color.b);
+            }
+            
+            islandGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            islandGeo.computeVertexNormals();
+            const islandMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+            const island = new THREE.Mesh(islandGeo, islandMat);
+            island.receiveShadow = true;
+            scene.add(island);
+
+            // Rocks
+            createRock(-35, -25);
+            createRock(-40, -15);
+            createRock(45, 30);
+            createRock(15, -45);
+            createRock(-20, 50);
+
+            // Decorate Island (Trees scattered on higher ground and beaches)
+            createPalmTree(-15, -25);
+            createPalmTree(-25, -20);
+            createPalmTree(28, -18);
+            createPalmTree(32, 28);
+            createPalmTree(-28, 35);
+            createPalmTree(0, 45);
+            createPalmTree(40, 0);
+
+            // Sandcastles
+            createSandcastle(25, 20);
+            createSandcastle(-35, 15);
+
+            // NPC (Crab)
+            npc = createCrab(0, 18);
+
+            // Treasure Chest
+            chest = createChest(0, -35);
+
+            // Bin for Mission 3
+            bin = createBin(-15, -8);
+
+            // New Fun Interactive Props
+            createSignpost(0, 22, "Sunny Beach");
+            createSurfboard(25, -15);
+            createBeachBall(-20, 25);
+            createBeachBall(30, 20);
+
+            // Items for M1 (Generic items)
+            spawnItem('shell', 12, 25);
+            spawnItem('shell', -30, -18);
+            spawnItem('starfish', 22, -26);
+            spawnItem('starfish', -18, 22);
+            spawnItem('bucket', -12, 28);
+            spawnItem('spade', 18, -12);
+
+            // Specific Items for M2
+            spawnItem('redbucket', 35, 5);
+            spawnItem('bluespade', -25, -5);
+
+            // Rubbish for M3 (Varied)
+            spawnItem('rubbish', 32, 38);
+            spawnItem('rubbish_can', -40, 8);
+            spawnItem('rubbish_paper', 8, 42);
+        }
+
+        // --- NEW PROPS ---
+        function createSignpost(x, z, text) {
+            const group = new THREE.Group();
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2), new THREE.MeshLambertMaterial({color: 0x8B4513}));
+            post.position.y = 1;
+            group.add(post);
+            const board = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 0.1), new THREE.MeshLambertMaterial({color: 0xD2B48C}));
+            board.position.set(0, 1.6, 0.1);
+            group.add(board);
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+            group.userData = { type: 'signpost', interactable: true, isProp: true };
+            interactableObjects.push(group);
+        }
+
+        function createSurfboard(x, z) {
+            const geo = new THREE.CylinderGeometry(0.6, 0.6, 3, 16);
+            geo.scale(1, 1, 0.1);
+            const mat = new THREE.MeshLambertMaterial({color: 0xff9900});
+            const board = new THREE.Mesh(geo, mat);
+            board.position.set(x, getTerrainHeight(x, z) + 1.5, z);
+            board.rotation.x = -Math.PI / 8; // leaning
+            board.rotation.z = Math.PI / 16;
+            board.castShadow = true;
+            scene.add(board);
+            board.userData = { type: 'surfboard', interactable: true, isProp: true };
+            interactableObjects.push(board);
+        }
+
+        function createBeachBall(x, z) {
+            const geo = new THREE.SphereGeometry(0.6, 16, 16);
+            const mat = new THREE.MeshLambertMaterial({color: 0xff3366}); 
+            const ball = new THREE.Mesh(geo, mat);
+            ball.position.set(x, getTerrainHeight(x, z) + 0.6, z);
+            ball.castShadow = true;
+            scene.add(ball);
+            ball.userData = { type: 'beachball', interactable: true, isProp: true };
+            interactableObjects.push(ball);
+        }
+
+        // Enhanced Object Builders
+        function createRock(x, z) {
+            const geo = new THREE.DodecahedronGeometry(Math.random() * 3 + 1.5, 1);
+            const mat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const rock = new THREE.Mesh(geo, mat);
+            rock.position.set(x, getTerrainHeight(x, z) + 0.2, z);
+            rock.rotation.set(Math.random(), Math.random(), Math.random());
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            scene.add(rock);
+        }
+
+        function createPalmTree(x, z) {
+            const group = new THREE.Group();
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6B4423 });
+            
+            // Curved Segmented Trunk
+            let currX = 0, currY = 0, currZ = 0;
+            const segments = 6;
+            for(let i=0; i<segments; i++) {
+                const radius = 0.5 - (i * 0.05);
+                const tGeo = new THREE.CylinderGeometry(radius - 0.05, radius, 1.2, 8);
+                const tMesh = new THREE.Mesh(tGeo, trunkMat);
+                tMesh.position.set(currX, currY + 0.6, currZ);
+                // Curve outward
+                tMesh.rotation.z = Math.sin(i * 0.4) * 0.15;
+                currX -= Math.sin(tMesh.rotation.z) * 1.2;
+                currY += 1.15;
+                tMesh.castShadow = true;
+                group.add(tMesh);
+            }
+
+            // Coconuts
+            const nutMat = new THREE.MeshLambertMaterial({ color: 0x4A2511 });
+            for(let i=0; i<3; i++) {
+                const nut = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), nutMat);
+                nut.position.set(currX + Math.cos(i*2)*0.5, currY, currZ + Math.sin(i*2)*0.5);
+                nut.castShadow = true;
+                group.add(nut);
+            }
+
+            // Proper curved leaves
+            const leavesMat = new THREE.MeshLambertMaterial({ color: 0x3A5F0B, side: THREE.DoubleSide });
+            for(let i=0; i<8; i++) {
+                const leafGeo = new THREE.ConeGeometry(0.8, 6, 4);
+                // Flatten cone to make a leaf
+                leafGeo.scale(1, 1, 0.1);
+                leafGeo.translate(0, 3, 0); // Pivot at base
+                const leaf = new THREE.Mesh(leafGeo, leavesMat);
+                leaf.position.set(currX, currY + 0.2, currZ);
+                leaf.rotation.y = (i * Math.PI * 2) / 8;
+                leaf.rotation.x = Math.PI / 2.5; // Droop down
+                leaf.castShadow = true;
+                group.add(leaf);
+            }
+            
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+        }
+
+        function createSandcastle(x, z) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xDEBA78 });
+            
+            // Main body
+            const base = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), mat);
+            base.position.y = 1;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            group.add(base);
+
+            // Door
+            const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 3.1), new THREE.MeshLambertMaterial({color: 0x444444}));
+            door.position.set(0, 0.6, 0);
+            group.add(door);
+
+            // Towers
+            const towerGeo = new THREE.CylinderGeometry(0.6, 0.8, 3.5, 12);
+            const roofGeo = new THREE.ConeGeometry(0.9, 1.5, 12);
+            const roofMat = new THREE.MeshLambertMaterial({color: 0xE06666}); // Red roofs
+            
+            const towers = [ {x: -1.5, z: -1.5}, {x: 1.5, z: -1.5}, {x: -1.5, z: 1.5}, {x: 1.5, z: 1.5} ];
+            towers.forEach(t => {
+                const tower = new THREE.Mesh(towerGeo, mat);
+                tower.position.set(t.x, 1.75, t.z);
+                tower.castShadow = true;
+                group.add(tower);
+                
+                const roof = new THREE.Mesh(roofGeo, roofMat);
+                roof.position.set(t.x, 4.25, t.z);
+                roof.castShadow = true;
+                group.add(roof);
+
+                // Flag
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1), new THREE.MeshLambertMaterial({color: 0xffffff}));
+                pole.position.set(t.x, 5.5, t.z);
+                group.add(pole);
+                const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshLambertMaterial({color: 0x3366cc, side: THREE.DoubleSide}));
+                flag.position.set(t.x + 0.3, 5.8, t.z);
+                group.add(flag);
+            });
+
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+            
+            group.userData = { type: 'sandcastle', interactable: true, isProp: true };
+            interactableObjects.push(group);
+        }
+
+        function createChest(x, z) {
+            const group = new THREE.Group();
+            const woodMat = new THREE.MeshLambertMaterial({ color: 0x5C3A21 });
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 1, roughness: 0.3 });
+
+            // Base
+            const base = new THREE.Mesh(new THREE.BoxGeometry(3, 1.5, 2), woodMat);
+            base.position.y = 0.75;
+            base.castShadow = true;
+            group.add(base);
+
+            // Straps for base
+            const strap1 = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.6, 0.2), metalMat);
+            strap1.position.set(0, 0.75, -0.6);
+            group.add(strap1);
+            const strap2 = new THREE.Mesh(new THREE.BoxGeometry(3.1, 1.6, 0.2), metalMat);
+            strap2.position.set(0, 0.75, 0.6);
+            group.add(strap2);
+
+            // Lid (nested group for hinge pivot)
+            const lidGroup = new THREE.Group();
+            lidGroup.position.set(0, 1.5, -1); // Hinge location
+            
+            const lid = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 3, 16, 1, false, 0, Math.PI), woodMat);
+            lid.rotation.z = Math.PI / 2;
+            lid.position.set(0, 0, 1);
+            lid.castShadow = true;
+            lidGroup.add(lid);
+
+            const lidStrap1 = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.2, 16, 1, false, 0, Math.PI), metalMat);
+            lidStrap1.rotation.z = Math.PI / 2;
+            lidStrap1.position.set(0.6, 0, 1);
+            lidGroup.add(lidStrap1);
+            
+            const lidStrap2 = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.2, 16, 1, false, 0, Math.PI), metalMat);
+            lidStrap2.rotation.z = Math.PI / 2;
+            lidStrap2.position.set(-0.6, 0, 1);
+            lidGroup.add(lidStrap2);
+
+            const lock = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.3), goldMat);
+            lock.position.set(0, 0, 2.1);
+            lidGroup.add(lock);
+
+            group.add(lidGroup); // index 3
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+            
+            group.userData = { type: 'chest', interactable: true };
+            interactableObjects.push(group);
+            return group;
+        }
+
+        function createCrab(x, z) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xE63946 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.2), mat);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            group.add(body);
+
+            const clawGeo = new THREE.SphereGeometry(0.4, 16, 16);
+            const clawL = new THREE.Mesh(clawGeo, mat);
+            clawL.position.set(-1, 0.6, 0.8);
+            group.add(clawL);
+            const clawR = new THREE.Mesh(clawGeo, mat);
+            clawR.position.set(1, 0.6, 0.8);
+            group.add(clawR);
+
+            const legGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.8);
+            for(let i=0; i<3; i++) {
+                const legL = new THREE.Mesh(legGeo, mat);
+                legL.position.set(-0.9 + i*0.3, 0.2, -0.6);
+                legL.rotation.x = -Math.PI/4;
+                legL.rotation.z = Math.PI/4;
+                group.add(legL);
+                
+                const legR = new THREE.Mesh(legGeo, mat);
+                legR.position.set(0.3 + i*0.3, 0.2, -0.6);
+                legR.rotation.x = -Math.PI/4;
+                legR.rotation.z = -Math.PI/4;
+                group.add(legR);
+            }
+
+            const stalkGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5);
+            const eyeGeo = new THREE.SphereGeometry(0.15, 16, 16);
+            const eyeMat = new THREE.MeshLambertMaterial({color: 0xffffff});
+            const pupilMat = new THREE.MeshLambertMaterial({color: 0x000000});
+
+            [-0.4, 0.4].forEach(px => {
+                const stalk = new THREE.Mesh(stalkGeo, mat);
+                stalk.position.set(px, 1, 0.4);
+                group.add(stalk);
+                
+                const eye = new THREE.Mesh(eyeGeo, eyeMat);
+                eye.position.set(px, 1.3, 0.4);
+                group.add(eye);
+                
+                const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.05), pupilMat);
+                pupil.position.set(px, 1.3, 0.52);
+                group.add(pupil);
+            });
+
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+            
+            group.userData = { type: 'npc', interactable: true };
+            interactableObjects.push(group);
+            return group;
+        }
+
+        function createBin(x, z) {
+            const group = new THREE.Group();
+            const binMat = new THREE.MeshLambertMaterial({ color: 0x2E4053 }); 
+            
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.8, 2.5, 32), binMat);
+            body.position.y = 1.25;
+            body.castShadow = true;
+            group.add(body);
+
+            const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.1, 8, 32), new THREE.MeshLambertMaterial({color: 0x17202A}));
+            rim.rotation.x = Math.PI / 2;
+            rim.position.y = 2.5;
+            group.add(rim);
+
+            const symbolGeo = new THREE.PlaneGeometry(0.8, 0.8);
+            const symbolMat = new THREE.MeshBasicMaterial({ color: 0x2ECC71, side: THREE.DoubleSide });
+            const symbol = new THREE.Mesh(symbolGeo, symbolMat);
+            symbol.position.set(0, 1.5, 0.95);
+            group.add(symbol);
+
+            group.position.set(x, getTerrainHeight(x, z), z);
+            scene.add(group);
+            group.userData = { type: 'bin', interactable: true };
+            interactableObjects.push(group);
+            return group;
+        }
+
+        function spawnItem(type, x, z) {
+            let mesh;
+            switch(type) {
+                case 'shell':
+                    const shellGrp = new THREE.Group();
+                    const shellBase = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.6, 12), new THREE.MeshLambertMaterial({ color: 0xFFC0CB }));
+                    shellBase.rotation.x = Math.PI/2;
+                    shellGrp.add(shellBase);
+                    const shellTop = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 12, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0xFF69B4 }));
+                    shellTop.position.z = -0.3;
+                    shellGrp.add(shellTop);
+                    mesh = shellGrp;
+                    mesh.position.y = 0.2;
+                    break;
+                case 'starfish':
+                    mesh = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.5, 0.5, 0.15, 5),
+                        new THREE.MeshLambertMaterial({ color: 0xFF7F50 })
+                    );
+                    for(let i=0; i<5; i++) {
+                        const bump = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshLambertMaterial({color: 0xFF4500}));
+                        bump.position.set(Math.cos(i*Math.PI*2/5)*0.3, 0.1, Math.sin(i*Math.PI*2/5)*0.3);
+                        mesh.add(bump);
+                    }
+                    mesh.position.y = 0.1;
+                    break;
+                case 'bucket':
+                    mesh = new THREE.Group();
+                    const bBody = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.35, 1, 32), new THREE.MeshLambertMaterial({ color: 0xFF3333 }));
+                    mesh.add(bBody);
+                    const bHandle = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 8, 16, Math.PI), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
+                    bHandle.position.y = 0.5;
+                    mesh.add(bHandle);
+                    mesh.position.y = 0.5;
+                    break;
+                case 'spade':
+                    mesh = new THREE.Group();
+                    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
+                    mesh.add(handle);
+                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.1), new THREE.MeshLambertMaterial({ color: 0x3399FF }));
+                    head.position.y = -0.6;
+                    mesh.add(head);
+                    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.1), new THREE.MeshLambertMaterial({ color: 0x3399FF }));
+                    grip.position.y = 0.6;
+                    mesh.add(grip);
+                    mesh.position.y = 0.6;
+                    mesh.rotation.x = Math.PI/3;
+                    break;
+                case 'redbucket':
+                    mesh = new THREE.Group();
+                    const rbBody = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.35, 1, 32), new THREE.MeshLambertMaterial({ color: 0xFF0000 }));
+                    mesh.add(rbBody);
+                    const rbHandle = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 8, 16, Math.PI), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
+                    rbHandle.position.y = 0.5;
+                    mesh.add(rbHandle);
+                    mesh.position.y = 0.5;
+                    break;
+                case 'bluespade':
+                    mesh = new THREE.Group();
+                    const bsHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
+                    mesh.add(bsHandle);
+                    const bsHead = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.1), new THREE.MeshLambertMaterial({ color: 0x0000FF }));
+                    bsHead.position.y = -0.6;
+                    mesh.add(bsHead);
+                    const bsGrip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.1), new THREE.MeshLambertMaterial({ color: 0x0000FF }));
+                    bsGrip.position.y = 0.6;
+                    mesh.add(bsGrip);
+                    mesh.position.y = 0.6;
+                    mesh.rotation.x = Math.PI/3;
+                    break;
+                case 'rubbish':
+                    mesh = new THREE.Group();
+                    const bottle = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.2, 0.2, 0.7, 12),
+                        new THREE.MeshLambertMaterial({ color: 0x99ccff, transparent: true, opacity: 0.6 })
+                    );
+                    bottle.rotation.z = Math.PI/2;
+                    mesh.add(bottle);
+                    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 12), new THREE.MeshLambertMaterial({color: 0xff0000}));
+                    cap.rotation.z = Math.PI/2;
+                    cap.position.x = 0.4;
+                    mesh.add(cap);
+                    mesh.position.y = 0.2;
+                    break;
+                case 'rubbish_can':
+                    mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.5, 16), new THREE.MeshLambertMaterial({color: 0xaaaaaa, metalness: 0.8}));
+                    mesh.rotation.x = Math.PI/2;
+                    mesh.position.y = 0.2;
+                    break;
+                case 'rubbish_paper':
+                    mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.6), new THREE.MeshLambertMaterial({color: 0xeeeeee}));
+                    mesh.position.y = 0.1;
+                    mesh.rotation.y = Math.PI/4;
+                    break;
+            }
+
+            if(mesh) {
+                mesh.position.set(x, getTerrainHeight(x, z) + mesh.position.y, z);
+                mesh.traverse(c => { if(c.isMesh) c.castShadow = true; });
+                mesh.userData = { type: type, interactable: true, active: true };
+                scene.add(mesh);
+                interactableObjects.push(mesh);
+            }
+        }
+
+        // --- ENHANCED PLAYER SETUP ---
+        function createPlayer() {
+            const group = new THREE.Group();
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xFFDAB9 }); // Skin tone
+            const shirtMat = new THREE.MeshLambertMaterial({ color: 0x4169E1 }); // Blue shirt
+            const pantsMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Brown pants
+            const hatMat = new THREE.MeshLambertMaterial({ color: 0xD2B48C }); // Tan hat
+            const darkMat = new THREE.MeshLambertMaterial({ color: 0x222222 }); // Eyes/Shoes
+
+            // Torso
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 0.6), shirtMat);
+            torso.position.y = 1.6;
+            torso.castShadow = true;
+            group.add(torso);
+
+            // Backpack
+            const bag = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1, 0.4), new THREE.MeshLambertMaterial({color: 0x228B22}));
+            bag.position.set(0, 1.6, -0.4);
+            bag.castShadow = true;
+            group.add(bag);
+
+            // Head
+            const headGrp = new THREE.Group();
+            headGrp.position.y = 2.6;
+            
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), skinMat);
+            head.castShadow = true;
+            headGrp.add(head);
+
+            // Eyes
+            const eyeGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+            const eyeL = new THREE.Mesh(eyeGeo, darkMat);
+            eyeL.position.set(-0.2, 0.1, 0.41);
+            headGrp.add(eyeL);
+            const eyeR = new THREE.Mesh(eyeGeo, darkMat);
+            eyeR.position.set(0.2, 0.1, 0.41);
+            headGrp.add(eyeR);
+
+            // Safari Hat (Base + Wide Brim)
+            const hatBase = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 0.4, 16), hatMat);
+            hatBase.position.y = 0.5;
+            headGrp.add(hatBase);
+            const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.05, 16), hatMat);
+            hatBrim.position.y = 0.3;
+            headGrp.add(hatBrim);
+
+            group.add(headGrp);
+
+            // Legs (Pivot at hip)
+            const legGeo = new THREE.BoxGeometry(0.4, 1, 0.4);
+            legGeo.translate(0, -0.5, 0); // Move pivot to top
+            const legL = new THREE.Mesh(legGeo, pantsMat);
+            legL.position.set(-0.25, 1, 0);
+            legL.castShadow = true;
+            group.add(legL);
+            
+            const legR = new THREE.Mesh(legGeo, pantsMat);
+            legR.position.set(0.25, 1, 0);
+            legR.castShadow = true;
+            group.add(legR);
+
+            // Arms (Pivot at shoulder)
+            const armGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
+            armGeo.translate(0, -0.5, 0); // Move pivot to top
+            const armL = new THREE.Mesh(armGeo, skinMat);
+            armL.position.set(-0.7, 2.1, 0);
+            armL.castShadow = true;
+            group.add(armL);
+
+            const armR = new THREE.Mesh(armGeo, skinMat);
+            armR.position.set(0.7, 2.1, 0);
+            armR.castShadow = true;
+            group.add(armR);
+
+            group.position.set(0, getTerrainHeight(0, 10), 10);
+            scene.add(group);
+            return { mesh: group, legs: [legL, legR], arms: [armL, armR] };
+        }
+
+        player = createPlayer();
+
+        // --- CONTROLS & PHYSICS ---
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+        let activeInteractable = null;
+
+        window.addEventListener('keydown', (e) => { 
+            if(keys.hasOwnProperty(e.key)) keys[e.key] = true; 
+            if(e.key.toLowerCase() === 'e') handleInteraction();
+        });
+        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+        const bindBtn = (id, key) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            btn.addEventListener('mousedown', (e) => { e.preventDefault(); keys[key] = true; });
+            btn.addEventListener('mouseup', (e) => { e.preventDefault(); keys[key] = false; });
+            btn.addEventListener('mouseleave', (e) => { e.preventDefault(); keys[key] = false; });
+        };
+        bindBtn('btn-up', 'w');
+        bindBtn('btn-down', 's');
+        bindBtn('btn-left', 'a');
+        bindBtn('btn-right', 'd');
+
+        function updatePlayer(delta) {
+            if (GameState.state === 'START' || GameState.state === 'QUIZ' || GameState.state === 'END' || isDialogOpen) return;
+
+            const speed = 12 * delta;
+            const turnSpeed = 3 * delta;
+            let moved = false;
+
+            if (keys.w || keys.ArrowUp) {
+                player.mesh.translateZ(-speed);
+                moved = true;
+            }
+            if (keys.s || keys.ArrowDown) {
+                player.mesh.translateZ(speed);
+                moved = true;
+            }
+            if (keys.a || keys.ArrowLeft) {
+                player.mesh.rotateY(turnSpeed);
+                moved = true;
+            }
+            if (keys.d || keys.ArrowRight) {
+                player.mesh.rotateY(-turnSpeed);
+                moved = true;
+            }
+
+            // Boundary Check (Expanded to radius 65)
+            const distFromCenter = Math.sqrt(player.mesh.position.x**2 + player.mesh.position.z**2);
+            if (distFromCenter > 65) {
+                // Push back to prevent swimming off map
+                const angle = Math.atan2(player.mesh.position.z, player.mesh.position.x);
+                player.mesh.position.x = 65 * Math.cos(angle);
+                player.mesh.position.z = 65 * Math.sin(angle);
+            }
+
+            // Snap to Terrain Height
+            const tHeight = getTerrainHeight(player.mesh.position.x, player.mesh.position.z);
+            // Smooth vertical transition for bumps
+            player.mesh.position.y += (tHeight - player.mesh.position.y) * 0.2; 
+
+            // Smooth walking animation with opposite arms/legs
+            if (moved) {
+                const time = Date.now() * 0.015;
+                player.legs[0].rotation.x = Math.sin(time) * 0.6;
+                player.legs[1].rotation.x = Math.sin(time + Math.PI) * 0.6;
+                player.arms[0].rotation.x = Math.sin(time + Math.PI) * 0.5;
+                player.arms[1].rotation.x = Math.sin(time) * 0.5;
+            } else {
+                player.legs[0].rotation.x = 0;
+                player.legs[1].rotation.x = 0;
+                player.arms[0].rotation.x = 0;
+                player.arms[1].rotation.x = 0;
+            }
+
+            // Camera follow
+            const relativeCameraOffset = new THREE.Vector3(0, 5, 12);
+            const cameraOffset = relativeCameraOffset.applyMatrix4(player.mesh.matrixWorld);
+            camera.position.lerp(cameraOffset, 0.1);
+            camera.lookAt(player.mesh.position.x, player.mesh.position.y + 2, player.mesh.position.z);
+        }
+
+        // --- INTERACTION LOGIC ---
+        function checkInteractions() {
+            if (GameState.state === 'START' || GameState.state === 'QUIZ' || isDialogOpen) {
+                document.getElementById('interaction-prompt').classList.add('hidden');
+                activeInteractable = null;
+                return;
+            }
+
+            let closest = null;
+            let minDist = 3.5; // Interaction radius
+
+            for (let obj of interactableObjects) {
+                if (obj.userData.active === false) continue;
+                
+                // Special conditions based on state
+                if (GameState.state === 'M3' && obj.userData.type === 'bin' && !GameState.hasBin) continue; // Cant use bin if holding nothing
+                
+                const dist = player.mesh.position.distanceTo(obj.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = obj;
+                }
+            }
+
+            if (closest !== activeInteractable) {
+                activeInteractable = closest;
+                const prompt = document.getElementById('interaction-prompt');
+                if (activeInteractable) {
+                    prompt.classList.remove('hidden');
+                    // Add outline effect
+                    if(activeInteractable.material) activeInteractable.material.emissive.setHex(0x333333);
+                } else {
+                    prompt.classList.add('hidden');
+                }
+            }
+            
+            // Reset emissive for others
+            interactableObjects.forEach(obj => {
+                if(obj !== activeInteractable && obj.material && obj.material.emissive) {
+                    obj.material.emissive.setHex(0x000000);
+                }
+            });
+        }
+
+        function handleInteraction() {
+            if (!activeInteractable) return;
+            const type = activeInteractable.userData.type;
+
+            if (type === 'npc') {
+                showDialog('Captain Claws', 'Hello, Explorer! Complete my missions to find the treasure keys!', 'crab');
+                return;
+            }
+
+            if (type === 'chest') {
+                if (GameState.keys >= 3) {
+                    startQuiz();
+                } else {
+                    showDialog('Locked Chest', `You need 3 keys to open this. You have ${GameState.keys}. Complete missions!`, null);
+                }
+                return;
+            }
+
+            // Prop vocab and fun interactions
+            if (activeInteractable.userData.isProp) {
+                if (type === 'beachball') {
+                    // Kick the ball!
+                    activeInteractable.userData.bouncing = true;
+                    activeInteractable.userData.bounceVelocity = 0.4;
+                    // Move it slightly away from player
+                    const dx = activeInteractable.position.x - player.mesh.position.x;
+                    const dz = activeInteractable.position.z - player.mesh.position.z;
+                    const len = Math.sqrt(dx*dx + dz*dz);
+                    activeInteractable.userData.dirX = (dx/len) * 0.2;
+                    activeInteractable.userData.dirZ = (dz/len) * 0.2;
+                    showDialog('Boing!', 'You kicked the beach ball!', 'beachball');
+                } else {
+                    showDialog('Vocab', '', type);
+                }
+                return;
+            }
+
+            // Mission Logic based on collected item
+            if (GameState.state === 'M1') {
+                if (['shell', 'starfish', 'bucket', 'spade'].includes(type)) {
+                    collectItem(activeInteractable);
+                    showDialog('Good Job!', '', type);
+                    GameState.missionProgress++;
+                    updateHUD();
+                    if (GameState.missionProgress >= GameState.missionTarget) {
+                        completeMission(1);
+                    }
+                } else if (['redbucket', 'bluespade'].includes(type)) {
+                    showDialog('Not Yet!', 'Leave these for later.', type);
+                }
+            } else if (GameState.state === 'M2') {
+                if (GameState.m2Targets.includes(type)) {
+                    collectItem(activeInteractable);
+                    showDialog('Correct!', '', type);
+                    GameState.missionProgress++;
+                    updateHUD();
+                    if (GameState.missionProgress >= GameState.missionTarget) {
+                        completeMission(2);
+                    }
+                } else if (['shell', 'starfish', 'bucket', 'spade'].includes(type)) {
+                    showDialog('Oops!', 'Look for a Red Bucket or Blue Spade!', type);
+                }
+            } else if (GameState.state === 'M3') {
+                if (['rubbish', 'rubbish_can', 'rubbish_paper'].includes(type)) {
+                    collectItem(activeInteractable);
+                    GameState.hasBin = true; // holding rubbish
+                    showDialog('Picked up Rubbish', 'Now find the bin and throw it away!', type);
+                } else if (type === 'bin' && GameState.hasBin) {
+                    GameState.hasBin = false;
+                    GameState.missionProgress++;
+                    showDialog('Great Job!', 'You kept the beach clean.', 'bin');
+                    updateHUD();
+                    if (GameState.missionProgress >= GameState.missionTarget) {
+                        completeMission(3);
+                    }
+                }
+            }
+        }
+
+        function collectItem(obj) {
+            obj.userData.active = false;
+            obj.visible = false;
+            activeInteractable = null;
+            document.getElementById('interaction-prompt').classList.add('hidden');
+            speakText(Dictionary[obj.userData.type].name);
+        }
+
+        // --- GAME FLOW & UI ---
+        let isDialogOpen = false;
+
+        function startGame() {
+            initAudio(); // Start background music on user interaction
+            document.getElementById('start-screen').classList.add('hidden');
+            createWorld();
+            
+            // Start M1
+            GameState.state = 'M1';
+            GameState.missionTarget = 3;
+            GameState.missionProgress = 0;
+            
+            document.getElementById('mission-hud').classList.remove('hidden');
+            updateHUD();
+            
+            showDialog('Captain Claws', "Welcome to Sunny Beach! Find 3 beach objects (Shells, Spades, Buckets) to get your first key.", 'crab');
+        }
+
+        function updateHUD() {
+            const hud = document.getElementById('mission-hud');
+            const title = document.getElementById('mission-title');
+            const obj = document.getElementById('mission-objective');
+            const bar = document.getElementById('mission-progress-bar');
+            const counter = document.getElementById('mission-counter');
+
+            if (GameState.state === 'M1') {
+                title.innerText = 'Mission 1: Beach Explorer';
+                obj.innerText = 'Find 3 beach objects!';
+            } else if (GameState.state === 'M2') {
+                title.innerText = 'Mission 2: Color Match';
+                obj.innerText = 'Find a Red Bucket & Blue Spade!';
+            } else if (GameState.state === 'M3') {
+                title.innerText = 'Mission 3: Save Our Beach';
+                obj.innerText = 'Put 3 pieces of rubbish in the bin!';
+            } else {
+                title.innerText = 'Final Mission';
+                obj.innerText = 'Unlock the Treasure Chest!';
+                bar.style.width = '100%';
+                counter.innerText = 'Keys: 3/3';
+                return;
+            }
+
+            const pct = (GameState.missionProgress / GameState.missionTarget) * 100;
+            bar.style.width = `${pct}%`;
+            counter.innerText = `${GameState.missionProgress}/${GameState.missionTarget}`;
+        }
+
+        function completeMission(missionNum) {
+            GameState.keys++;
+            setTimeout(() => {
+                let msg = `Mission ${missionNum} Complete! You got a Golden Key! 🗝️`;
+                if (missionNum === 1) {
+                    GameState.state = 'M2';
+                    GameState.missionTarget = 2;
+                    GameState.missionProgress = 0;
+                    showDialog('Mission Complete!', msg + ' Next, Captain Claws says: "Find a Red Bucket and a Blue Spade!"', 'crab');
+                } else if (missionNum === 2) {
+                    GameState.state = 'M3';
+                    GameState.missionTarget = 3;
+                    GameState.missionProgress = 0;
+                    GameState.hasBin = false;
+                    showDialog('Mission Complete!', msg + ' Final mission: Clean the beach! Pick up rubbish (Bottle, Can, Paper) and put it in the bin.', 'bin');
+                } else if (missionNum === 3) {
+                    GameState.state = 'FINAL';
+                    showDialog('Amazing!', msg + ' You have all 3 keys! Go to the Treasure Chest to unlock it.', 'chest');
+                }
+                updateHUD();
+            }, 1000);
+        }
+
+        function showDialog(name, text, vocabType = null) {
+            isDialogOpen = true;
+            document.getElementById('dialog-box').classList.remove('hidden');
+            document.getElementById('dialog-name').innerText = name;
+            document.getElementById('dialog-text').innerText = text;
+            
+            const vocabDiv = document.getElementById('dialog-vocab');
+            if (vocabType && Dictionary[vocabType]) {
+                vocabDiv.classList.remove('hidden');
+                document.getElementById('vocab-word').innerText = Dictionary[vocabType].name;
+                document.getElementById('vocab-sentence').innerText = Dictionary[vocabType].sentence;
+                speakText(Dictionary[vocabType].sentence);
+                
+                let icon = '🌊';
+                if(vocabType==='crab') icon = '🦀';
+                if(vocabType==='shell') icon = '🐚';
+                if(vocabType==='starfish') icon = '⭐';
+                if(vocabType==='chest') icon = '🧰';
+                if(vocabType==='rubbish') icon = '🥤';
+                if(vocabType==='bin') icon = '🗑️';
+                document.getElementById('dialog-icon').innerText = icon;
+            } else {
+                vocabDiv.classList.add('hidden');
+                document.getElementById('dialog-icon').innerText = '🦀';
+            }
+        }
+
+        function closeDialog() {
+            document.getElementById('dialog-box').classList.add('hidden');
+            isDialogOpen = false;
+        }
+
+        // --- QUIZ LOGIC ---
+        function startQuiz() {
+            GameState.state = 'QUIZ';
+            document.getElementById('mission-hud').classList.add('hidden');
+            document.getElementById('interaction-prompt').classList.add('hidden');
+            document.getElementById('quiz-screen').classList.remove('hidden');
+            currentQuizIndex = 0;
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            const q = QuizQuestions[currentQuizIndex];
+            document.getElementById('quiz-progress').innerText = `Question ${currentQuizIndex + 1} of 5`;
+            document.getElementById('quiz-question').innerText = q.q;
+            
+            const optionsContainer = document.getElementById('quiz-options');
+            optionsContainer.innerHTML = '';
+            document.getElementById('quiz-feedback').classList.add('hidden');
+
+            q.options.forEach((opt, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'w-full bg-blue-100 hover:bg-blue-200 border-2 border-blue-300 text-blue-900 font-bold py-3 px-4 rounded-xl text-left transition-colors';
+                btn.innerText = opt;
+                btn.onclick = () => checkAnswer(index, btn);
+                optionsContainer.appendChild(btn);
+            });
+            speakText(q.q);
+        }
+
+        function checkAnswer(selectedIndex, btnElement) {
+            const q = QuizQuestions[currentQuizIndex];
+            const feedback = document.getElementById('quiz-feedback');
+            feedback.classList.remove('hidden');
+
+            // Disable buttons temporarily
+            const btns = document.getElementById('quiz-options').children;
+            for(let b of btns) b.disabled = true;
+
+            if (selectedIndex === q.answer) {
+                btnElement.classList.replace('bg-blue-100', 'bg-green-400');
+                feedback.innerText = "Correct! Well done.";
+                feedback.className = "mt-4 font-bold text-center text-green-600 text-xl";
+                
+                setTimeout(() => {
+                    currentQuizIndex++;
+                    if (currentQuizIndex < QuizQuestions.length) {
+                        loadQuestion();
+                    } else {
+                        winGame();
+                    }
+                }, 1500);
+            } else {
+                btnElement.classList.replace('bg-blue-100', 'bg-red-400');
+                feedback.innerText = "Oops! Try again.";
+                feedback.className = "mt-4 font-bold text-center text-red-500 text-xl";
+                
+                setTimeout(() => {
+                    btnElement.classList.replace('bg-red-400', 'bg-blue-100');
+                    feedback.classList.add('hidden');
+                    for(let b of btns) b.disabled = false;
+                }, 1500);
+            }
+        }
+
+        function winGame() {
+            document.getElementById('quiz-screen').classList.add('hidden');
+            
+            // Animate chest opening
+            if(chest) {
+                // LidGroup is the 4th child (index 3) in the new enhanced chest model
+                const lid = chest.children[3];
+                let openAngle = 0;
+                const openInterval = setInterval(() => {
+                    openAngle += 0.05;
+                    lid.rotation.x = -openAngle;
+                    if(openAngle >= Math.PI/2) {
+                        clearInterval(openInterval);
+                        document.getElementById('end-screen').classList.remove('hidden');
+                    }
+                }, 30);
+            } else {
+                document.getElementById('end-screen').classList.remove('hidden');
+            }
+            speakText("Congratulations! You found the lost treasure!");
+        }
+
+        // --- AUDIO ---
+        let audioCtx, bgMusicGain;
+        function initAudio() {
+            if(audioCtx) return;
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                
+                // Ocean Waves Synth (White noise -> Lowpass)
+                const bufferSize = 2 * audioCtx.sampleRate;
+                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+                
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                noise.loop = true;
+                
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 300; // Muffled roar
+                
+                bgMusicGain = audioCtx.createGain();
+                bgMusicGain.gain.value = 0.05; // Gentle volume
+                
+                noise.connect(filter);
+                filter.connect(bgMusicGain);
+                bgMusicGain.connect(audioCtx.destination);
+                noise.start(0);
+                
+                // Gentle musical drone
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 261.63; // C4
+                const oscGain = audioCtx.createGain();
+                oscGain.gain.value = 0.02;
+                osc.connect(oscGain);
+                oscGain.connect(bgMusicGain);
+                osc.start(0);
+
+                const osc2 = audioCtx.createOscillator();
+                osc2.type = 'sine';
+                osc2.frequency.value = 329.63; // E4
+                const osc2Gain = audioCtx.createGain();
+                osc2Gain.gain.value = 0.015;
+                osc2.connect(osc2Gain);
+                osc2Gain.connect(bgMusicGain);
+                osc2.start(0);
+            } catch (e) {
+                console.log("Audio not supported");
+            }
+        }
+
+        function toggleSound() {
+            GameState.soundEnabled = !GameState.soundEnabled;
+            document.getElementById('btn-sound').innerText = GameState.soundEnabled ? '🔊' : '🔇';
+            if (bgMusicGain) {
+                bgMusicGain.gain.value = GameState.soundEnabled ? 0.05 : 0;
+            }
+        }
+
+        function speakText(text) {
+            if (!GameState.soundEnabled) return;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Stop current speech
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-GB'; // Simple British English for ESL
+                utterance.rate = 0.9; // Slightly slower for kids
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // --- GAME LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (player) {
+                updatePlayer(delta);
+                checkInteractions();
+            }
+
+            // Simple wave animation (bobbing water)
+            const water = scene.children.find(c => c.geometry && c.geometry.type === 'PlaneGeometry');
+            if(water) water.position.y = -0.5 + Math.sin(Date.now() * 0.001) * 0.1;
+
+            // Animate Crab
+            if (npc) {
+                npc.position.x = Math.sin(Date.now() * 0.001) * 2;
+                // Wobble
+                npc.rotation.z = Math.sin(Date.now() * 0.005) * 0.1;
+            }
+
+            // Prop Animations (e.g. bouncing beachball)
+            interactableObjects.forEach(obj => {
+                if (obj.userData.bouncing) {
+                    obj.position.y += obj.userData.bounceVelocity;
+                    obj.position.x += obj.userData.dirX;
+                    obj.position.z += obj.userData.dirZ;
+                    obj.userData.bounceVelocity -= 0.02; // gravity
+                    const groundY = getTerrainHeight(obj.position.x, obj.position.z) + 0.6;
+                    if (obj.position.y <= groundY) {
+                        obj.position.y = groundY;
+                        obj.userData.bounceVelocity *= -0.6; // bounce back
+                        if (Math.abs(obj.userData.bounceVelocity) < 0.05) {
+                            obj.userData.bouncing = false; // stop bouncing
+                        }
+                    }
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Loop
+        window.onload = () => {
+            animate();
+        };
+
+    </script>
+</body>
+</html>
